@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="pt">
+<head><meta charset="utf-8"><title>Testes</title>
+<style>body{font:14px monospace;padding:12px}.ok{color:#2e7d32}.ko{color:#c62828;font-weight:bold}</style></head>
+<body>
+<h2>Testes das regras</h2>
+<div id="out"></div>
+<script src="js/rules.js"></script>
+<script>
+const R = window.Rules;
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function eq(name, got, exp) {
+  const g = JSON.stringify(got), e = JSON.stringify(exp);
+  const ok = g === e;
+  ok ? pass++ : fail++;
+  out.insertAdjacentHTML('beforeend', `<div class="${ok ? 'ok' : 'ko'}">${ok ? 'OK ' : 'FALHOU '} ${name}${ok ? '' : ` — obtido ${g}, esperado ${e}`}</div>`);
+}
+function m(a, b, sa, sb, cards) { return Object.assign(R.emptyMatch({ a, b, sa, sb }), cards || {}); }
+function group(name, teams, matches) { return { id: name, name, teams, matches, drawOrder: [] }; }
+const S = R.withDefaults();
+const order = g => R.rankGroup(g, S).map(r => r.id);
+
+// 1. pontos básicos
+eq('pontos V/E/D', R.rankGroup(group('A', ['x', 'y', 'z'], [m('x', 'y', 2, 0), m('y', 'z', 1, 1), m('x', 'z', 0, 0)]), S).map(r => [r.id, r.pts]), [['x', 4], ['z', 2], ['y', 1]]);
+
+// 2. disciplina antes do confronto direto
+eq('disciplina antes de confronto direto', order(group('A', ['x', 'y', 'z'], [
+  m('x', 'y', 1, 0, { ya: 2 }), m('y', 'z', 1, 0), m('z', 'x', 1, 0),
+])), ['y', 'z', 'x']);
+
+// 3. confronto direto antes da diferença de golos
+// x: V y, D z, V w = 6 pts DG -1 ; y: D x, V w, V z = 6 pts DG +6 ; z: 4 ; w: 1
+const g3 = group('A', ['x', 'y', 'z', 'w'], [
+  m('x', 'y', 1, 0), m('z', 'w', 0, 0), m('x', 'z', 0, 3), m('y', 'w', 6, 0), m('x', 'w', 1, 0), m('y', 'z', 1, 0),
+]);
+eq('x à frente de y pelo confronto direto apesar de pior DG', order(g3), ['x', 'y', 'z', 'w']);
+
+// 4. triplo empate circular -> mini-liga empatada -> DG geral
+eq('triplo empate circular resolvido por DG', order(group('A', ['x', 'y', 'z'], [
+  m('x', 'y', 1, 0), m('y', 'z', 3, 0), m('z', 'x', 2, 0),
+])), ['y', 'z', 'x']);
+
+// 4b. dois pares empatados (a/b com 6 pts, c/d com 3 pts), cada um resolvido pelo confronto direto
+const g4 = group('A', ['a', 'b', 'c', 'd'], [
+  m('a', 'b', 1, 0), m('a', 'c', 1, 0), m('b', 'c', 2, 0),
+  m('d', 'a', 5, 0), m('b', 'd', 1, 0), m('c', 'd', 1, 0),
+]);
+eq('confronto direto em pares', order(g4), ['a', 'b', 'c', 'd']);
+
+// 5. DG, GM, GS
+const g5 = group('A', ['x', 'y', 'z', 'w'], [
+  m('x', 'y', 2, 2), m('x', 'z', 3, 1), m('y', 'z', 4, 2), m('x', 'w', 0, 1), m('y', 'w', 0, 1), m('z', 'w', 1, 0),
+]);
+// w 6 pts ; x: E,V,D = 4 pts GM5 GS4 DG+1 ; y: E,V,D = 4 GM6 GS5 DG+1 -> y à frente por GM
+eq('GM desempata após DG igual', order(g5), ['w', 'y', 'x', 'z']);
+
+// 6. empate total -> sorteio
+const g6 = group('A', ['x', 'y'], [m('x', 'y', 1, 1)]);
+eq('empate total marcado', R.rankGroup(g6, S).map(r => r.tied), [true, true]);
+g6.drawOrder = ['y', 'x'];
+eq('sorteio resolve', R.rankGroup(g6, S).map(r => [r.id, r.tied]), [['y', false], ['x', false]]);
+
+// 7. melhor 2º com séries de 3 e 4 equipas (desconta jogos com o 4º)
+const A = group('A', ['a1', 'a2', 'a3', 'a4'], [
+  m('a1', 'a2', 1, 0), m('a3', 'a4', 0, 0), m('a1', 'a3', 1, 0), m('a2', 'a4', 9, 0), m('a1', 'a4', 1, 0), m('a2', 'a3', 1, 0),
+]);
+const B = group('B', ['b1', 'b2', 'b3'], [m('b1', 'b2', 1, 0), m('b1', 'b3', 1, 0), m('b2', 'b3', 2, 0)]);
+const concBest = { groups: [A, B], drawOrder: [], ko: R.newKO({ type: 'final', template: '1A-M2' }) };
+const ctxB = R.analyze(concBest, S);
+const best2 = R.bestOf(ctxB, 2);
+// a2 sem o jogo vs a4: 3 pts, DG 0 ; b2: 3 pts DG +1 -> b2 melhor 2º
+eq('melhor 2º descontando jogo com último', best2.map(r => [r.id, r.pts, r.dg]), [['b2', 3, 1], ['a2', 3, 0]]);
+eq('token M2 resolve', R.resolveToken(ctxB, 'M2'), 'b2');
+
+// 8. penáltis
+eq('vencedor por penáltis', R.koWinner(Object.assign(m('p', 'q', 1, 1), { pa: 3, pb: 4 })), 'q');
+eq('empate sem penáltis = sem vencedor', R.koWinner(m('p', 'q', 2, 2)), null);
+
+// 9. cenário +45: 3 séries de 3, 1A-M2 | 1B-1C, 3º/4º pela fase de grupos
+function c45() {
+  const gA = group('A', ['Turbolentos', 'Vitoria', 'Calheta'], [m('Vitoria', 'Calheta', 2, 1), m('Turbolentos', 'Vitoria', 1, 1), m('Turbolentos', 'Calheta', 3, 0)]);
+  const gB = group('B', ['Xavelhas', 'Fontainhas', 'EJInacio'], [m('Xavelhas', 'Fontainhas', 0, 1), m('Fontainhas', 'EJInacio', 2, 0), m('Xavelhas', 'EJInacio', 2, 2)]);
+  const gC = group('C', ['Campanario', 'Mourisca', 'Bacchus'], [m('Mourisca', 'Bacchus', 1, 0), m('Campanario', 'Mourisca', 0, 0), m('Campanario', 'Bacchus', 2, 0)]);
+  const conc = { groups: [gA, gB, gC], drawOrder: [], ko: R.newKO({ type: 'semis', template: '1A-M2|1B-1C', thirdMode: 'grupos' }) };
+  return conc;
+}
+let k45 = c45();
+let ctx = R.analyze(k45, S);
+eq('+45 série A', ctx.groups[0].ranking.map(r => r.id), ['Turbolentos', 'Vitoria', 'Calheta']);
+eq('+45 série C (Campanário 4 pts, Mourisca 4 pts, confronto empatado, DG)', ctx.groups[2].ranking.map(r => r.id), ['Campanario', 'Mourisca', 'Bacchus']);
+// 2ºs: Vitoria 4 pts, Xavelhas 1 pt, Mourisca 4 pts DG+1 vs Vitoria DG+1, GM Vitoria 3 > Mourisca 1
+eq('+45 melhor 2º', R.bestOf(ctx, 2)[0].id, 'Vitoria');
+let ko = R.resolveKO(ctx);
+eq('+45 meias', ko.semis.map(s => [s.a, s.b]), [['Turbolentos', 'Vitoria'], ['Fontainhas', 'Campanario']]);
+Object.assign(k45.ko.semis[0], { sa: 0, sb: 0, pa: 4, pb: 5 });
+Object.assign(k45.ko.semis[1], { sa: 2, sb: 1 });
+Object.assign(k45.ko.final, { sa: 1, sb: 3 });
+let sum = R.summarize(k45, S);
+eq('+45 final', [sum.ko.final.a, sum.ko.final.b], ['Vitoria', 'Fontainhas']);
+// vencidos: Turbolentos (4 pts DG+3) vs Campanario (4 pts DG+1) -> Turbolentos 3º
+eq('+45 classificação 1-4', sum.fr.places.slice(0, 4), ['Fontainhas', 'Vitoria', 'Turbolentos', 'Campanario']);
+eq('+45 completa', sum.fr.complete, true);
+eq('+45 pontos circuito', sum.fr.places.map(id => sum.pts[id]), [5, 4, 3, 2, 1, 1, 1, 1, 1]);
+
+// 10. cenário +35: séries 4,3,3,3; 1A-1B | 1C-1D; jogo 3º/4º; cartões na final contam
+function c35() {
+  const gA = group('A', ['Canicense', 'Choupana', 'Andorinha', 'CLobos'], [
+    m('Canicense', 'Choupana', 2, 0), m('Andorinha', 'CLobos', 1, 0), m('Canicense', 'Andorinha', 1, 0),
+    m('Choupana', 'CLobos', 0, 0), m('Choupana', 'Andorinha', 1, 1), m('Canicense', 'CLobos', 3, 0)]);
+  const gB = group('B', ['Brunch', 'Campanario', 'VetPS'], [m('Brunch', 'Campanario', 1, 0), m('Brunch', 'VetPS', 1, 0), m('Campanario', 'VetPS', 1, 0)]);
+  const gC = group('C', ['Fontainhas', 'Bacchus', 'SSerra'], [m('Fontainhas', 'Bacchus', 0, 1), m('Fontainhas', 'SSerra', 1, 0), m('Bacchus', 'SSerra', 2, 0)]);
+  const gD = group('D', ['Xavelhas', 'PMaio', 'Santana'], [m('Xavelhas', 'PMaio', 1, 1), m('Xavelhas', 'Santana', 2, 0), m('PMaio', 'Santana', 2, 0, { ya: 1 })]);
+  return { groups: [gA, gB, gC, gD], drawOrder: [], ko: R.newKO({ type: 'semis', template: '1A-1B|1C-1D', thirdMode: 'jogo' }) };
+}
+const k35 = c35();
+// Série D: Xavelhas 4 pts DG+2, PMaio 4 pts DG+2 (disc 1) -> Xavelhas pela disciplina
+let s35 = R.summarize(k35, S);
+eq('+35 série D desempate por disciplina', s35.ctx.groups[3].ranking.map(r => r.id), ['Xavelhas', 'PMaio', 'Santana']);
+eq('+35 meias', s35.ko.semis.map(s => [s.a, s.b]), [['Canicense', 'Brunch'], ['Bacchus', 'Xavelhas']]);
+Object.assign(k35.ko.semis[0], { sa: 2, sb: 0 });
+Object.assign(k35.ko.semis[1], { sa: 1, sb: 2 });
+Object.assign(k35.ko.final, { sa: 1, sb: 0, rb: 1 });
+s35 = R.summarize(k35, S);
+eq('+35 incompleta sem jogo 3º/4º', s35.fr.complete, false);
+Object.assign(k35.ko.third, { sa: 3, sb: 3, pa: 2, pb: 1 });
+s35 = R.summarize(k35, S);
+eq('+35 classificação', s35.fr.places.slice(0, 4), ['Canicense', 'Xavelhas', 'Brunch', 'Bacchus']);
+eq('+35 disciplina inclui final (vermelho=3)', s35.disc.Xavelhas, 3);
+
+// 11. tabela geral do circuito
+const comp = { settings: S, concs: [c45(), k45] };
+// conc 1 por terminar (pend), conc 2 terminada
+let tab = R.circuitTable(comp);
+eq('circuito: concentração por terminar fica pendente', tab.find(r => r.id === 'Fontainhas').per, ['pend', 5]);
+const k45b = c45();
+Object.assign(k45b.ko.semis[0], { sa: 2, sb: 0 }); // Turbolentos
+Object.assign(k45b.ko.semis[1], { sa: 0, sb: 1 }); // Campanario
+Object.assign(k45b.ko.final, { sa: 1, sb: 0, ya: 1 }); // Turbolentos campeão, 1 amarelo
+const comp2 = { settings: S, concs: [k45b, k45] };
+tab = R.circuitTable(comp2);
+// Turbolentos 5+3=8 ; Fontainhas 3? (vencido meia, 3º/4º por grupos: Fontainhas 6pts vs Vitoria 4pts -> Fontainhas 3º) 3+5=8
+const row = id => tab.find(r => r.id === id);
+eq('circuito totais', [row('Turbolentos').total, row('Fontainhas').total], [8, 8]);
+eq('circuito empate desfeito por disciplina', tab.slice(0, 2).map(r => r.id), ['Fontainhas', 'Turbolentos']);
+
+// 12. calendário
+const rr4 = R.generateMatches(['a', 'b', 'c', 'd'], { start: '10:30', interval: 30, fields: '1,2' });
+eq('4 equipas = 6 jogos', rr4.length, 6);
+eq('todos os pares uma vez', new Set(rr4.map(x => [x.a, x.b].sort().join())).size, 6);
+eq('horários com 2 campos', rr4.map(x => x.time + '/' + x.field), ['10:30/1', '10:30/2', '11:00/1', '11:00/2', '11:30/1', '11:30/2']);
+eq('3 equipas = 3 jogos', R.generateMatches(['a', 'b', 'c'], {}).length, 3);
+
+// 12b. trocar ordem, casa/fora e ordenar pela hora
+const mv = R.generateMatches(['a', 'b', 'c', 'd'], { start: '10:30', interval: 30, fields: '1,2' });
+const pairs = mv.map(x => x.a + x.b);
+mv[0].sa = 2; mv[0].sb = 1;
+R.moveMatch(mv, 0, 1);
+eq('mover troca a ordem', mv.map(x => x.a + x.b).slice(0, 2), [pairs[1], pairs[0]]);
+eq('mover mantém horários sequenciais', mv.map(x => x.time + '/' + x.field), ['10:30/1', '10:30/2', '11:00/1', '11:00/2', '11:30/1', '11:30/2']);
+eq('resultado acompanha o jogo', [mv[1].sa, mv[1].sb], [2, 1]);
+eq('mover para fora da lista não faz nada', R.moveMatch(mv, 0, -1).map(x => x.a + x.b)[0], pairs[1]);
+const gs = group('A', ['x', 'y', 'z'], [m('x', 'y', 2, 0, { ya: 1 }), m('y', 'z', 1, 1), m('x', 'z', 0, 3)]);
+const before = R.rankGroup(gs, S).map(r => [r.id, r.pts, r.disc]);
+R.swapSides(gs.matches[0]);
+eq('casa/fora troca equipas, golos e cartões', [gs.matches[0].a, gs.matches[0].b, gs.matches[0].sa, gs.matches[0].sb, gs.matches[0].ya, gs.matches[0].yb], ['y', 'x', 0, 2, 0, 1]);
+eq('casa/fora não muda a classificação', R.rankGroup(gs, S).map(r => [r.id, r.pts, r.disc]), before);
+const st = [R.emptyMatch({ time: '' }), R.emptyMatch({ time: '10:00' }), R.emptyMatch({ time: '9:30' }), R.emptyMatch({ time: '10h00' })];
+eq('ordenar pela hora', R.sortByTime(st).map(x => x.time), ['9:30', '10:00', '10h00', '']);
+
+// 13. validação de modelos
+eq('modelo válido', R.validateTemplate(c45(), '1A-M2|1B-1C', 'semis'), '');
+eq('modelo com série inexistente', !!R.validateTemplate(c45(), '1A-1D|1B-1C', 'semis'), true);
+eq('modelo repetido', !!R.validateTemplate(c45(), '1A-M2|1A-1C', 'semis'), true);
+
+document.title = fail ? `FALHOU ${fail}` : `OK ${pass}`;
+out.insertAdjacentHTML('afterbegin', `<h3 class="${fail ? 'ko' : 'ok'}">${pass} OK, ${fail} falhados</h3>`);
+</script>
+</body>
+</html>
