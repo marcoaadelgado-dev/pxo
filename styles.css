@@ -122,6 +122,14 @@ tr.medal.m3 td:first-child { border-left: 4px solid #cd7f32; }
 .step button:disabled { opacity: .3; }
 .step b { min-width: 14px; text-align: center; }
 .match details { margin-top: 8px; font-size: .9rem; }
+
+/* modo consulta (link só de leitura) */
+.viewbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  background: var(--pri-l); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: .85rem;
+}
+.ro [data-act]:not(.ro-keep), .ro .step button, .ro details.card, .ro .match details { display: none; }
+.ro input:disabled { color: var(--txt); -webkit-text-fill-color: var(--txt); opacity: 1; }
 .match summary { color: var(--mut); cursor: pointer; }
 
 ol.tb { padding-left: 22px; margin: 0; }

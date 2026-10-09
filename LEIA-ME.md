@@ -50,6 +50,12 @@ Pontos → Disciplina (menos pontos à frente) → Confronto direto → Diferen�
 - Jogos separados por `|`. Ex.: `1A-M2|1B-1C` (como no +45) ou `1A-1B|1C-1D` (como no +35).
 - "Melhor 2º" com séries de tamanhos diferentes: nas séries maiores não contam os jogos contra o último.
 
+### Link de consulta (para clubes e jogadores)
+Na página da competição → **🔗 Partilhar link de consulta** → enviar pelo WhatsApp.
+Quem abre o link vê séries, jogos, fase final, classificação e tabela geral, **só para ler**
+(não consegue alterar nada). O link leva os dados do momento em que foi criado: depois de
+mais jogos, enviar um link novo. Os dados vão dentro do próprio link (não ficam em nenhum servidor).
+
 ### Cópia de segurança
 Início → **Cópia de segurança** → *Exportar* gera um ficheiro `.json` (guardar no Google Drive).
 *Importar* repõe os dados (ex.: noutro telemóvel).

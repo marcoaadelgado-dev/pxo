@@ -6,6 +6,7 @@
 <h2>Testes das regras</h2>
 <div id="out"></div>
 <script src="js/rules.js"></script>
+<script src="js/store.js"></script>
 <script>
 const R = window.Rules;
 const out = document.getElementById('out');
@@ -173,8 +174,23 @@ eq('modelo válido', R.validateTemplate(c45(), '1A-M2|1B-1C', 'semis'), '');
 eq('modelo com série inexistente', !!R.validateTemplate(c45(), '1A-1D|1B-1C', 'semis'), true);
 eq('modelo repetido', !!R.validateTemplate(c45(), '1A-M2|1A-1C', 'semis'), true);
 
-document.title = fail ? `FALHOU ${fail}` : `OK ${pass}`;
-out.insertAdjacentHTML('afterbegin', `<h3 class="${fail ? 'ko' : 'ok'}">${pass} OK, ${fail} falhados</h3>`);
+// 14. link de consulta (assíncrono)
+(async () => {
+  const compL = { id: 'c1', name: 'Circuito', type: 'circuito', settings: S, concs: [c45(), c35()] };
+  const clubsL = ['Turbolentos', 'Vitoria', 'Fontainhas', 'NaoJoga'].map(id => ({ id, name: id + ' FC' }));
+  const snap = Store.snapshot(compL, clubsL);
+  eq('link: só leva clubes que participam', snap.clubs.map(c => c.id), ['Turbolentos', 'Vitoria', 'Fontainhas']);
+  const code = await Store.encodeLink(snap);
+  eq('link: só caracteres seguros', /^[zj][A-Za-z0-9_-]+$/.test(code), true);
+  eq('link: ida e volta igual', await Store.decodeLink(code), snap);
+  let err = '';
+  try { await Store.decodeLink('zlixo'); } catch (e) { err = e.message; }
+  eq('link: inválido dá erro', err, 'Link de consulta inválido ou incompleto.');
+  out.insertAdjacentHTML('beforeend', `<div class="muted">tamanho do link (2 concentrações): ${code.length} caracteres</div>`);
+})().catch(e => eq('link: exceção', e.message, '')).then(() => {
+  document.title = fail ? `FALHOU ${fail}` : `OK ${pass}`;
+  out.insertAdjacentHTML('afterbegin', `<h3 class="${fail ? 'ko' : 'ok'}">${pass} OK, ${fail} falhados</h3>`);
+});
 </script>
 </body>
 </html>

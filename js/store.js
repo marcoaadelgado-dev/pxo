@@ -59,5 +59,48 @@
     return state;
   }
 
-  global.Store = { load, save, exportFile, importText, reset, get state() { return state; } };
+  // ---------- link de consulta (dados dentro do próprio link, depois do #) ----------
+  function snapshot(comp, clubs) {
+    const used = new Set();
+    comp.concs.forEach(k => global.Rules.participants(k).forEach(id => used.add(id)));
+    return { v: 1, at: new Date().toISOString(), comp, clubs: clubs.filter(c => used.has(c.id)) };
+  }
+
+  async function pipe(bytes, stream) {
+    return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+  }
+
+  function toB64url(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function fromB64url(s) {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(bin, c => c.charCodeAt(0));
+  }
+
+  // 'z' = comprimido; 'j' = sem compressão (browsers antigos)
+  async function encodeLink(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    if (typeof CompressionStream === 'undefined') return 'j' + toB64url(bytes);
+    return 'z' + toB64url(await pipe(bytes, new CompressionStream('deflate-raw')));
+  }
+
+  async function decodeLink(str) {
+    let snap;
+    try {
+      let bytes = fromB64url(str.slice(1));
+      if (str[0] === 'z') bytes = await pipe(bytes, new DecompressionStream('deflate-raw'));
+      else if (str[0] !== 'j') throw new Error();
+      snap = JSON.parse(new TextDecoder().decode(bytes));
+    } catch (e) { snap = null; }
+    if (!snap || !snap.comp || !Array.isArray(snap.comp.concs) || !Array.isArray(snap.clubs)) {
+      throw new Error('Link de consulta inválido ou incompleto.');
+    }
+    return snap;
+  }
+
+  global.Store = { load, save, exportFile, importText, reset, snapshot, encodeLink, decodeLink, get state() { return state; } };
 })(window);

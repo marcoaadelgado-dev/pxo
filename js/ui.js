@@ -7,7 +7,11 @@
   const titleEl = document.getElementById('title');
   const backBtn = document.getElementById('back');
 
-  let state = S.load();
+  const VKEY = 'pxo-ver'; // sessionStorage: dados do link de consulta aberto
+  const isViewLink = () => location.hash.startsWith('#/ver/');
+  let viewer = null; // snapshot em modo consulta (só leitura)
+  // em modo consulta não se toca nos dados guardados de quem abre o link
+  let state = isViewLink() || sessionStorage.getItem(VKEY) ? { clubs: [], comps: [] } : S.load();
   let current = null; // { comp, conc } do ecrã aberto
   let draft = null; // assistente de nova concentração
   const pendingDraw = {}; // ordens de sorteio ainda não confirmadas
@@ -19,7 +23,8 @@
   const sortedClubs = () => state.clubs.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt'));
   const letter = i => String.fromCharCode(65 + i);
   const opt = (value, label, sel) => `<option value="${esc(value)}" ${String(value) === String(sel) ? 'selected' : ''}>${esc(label)}</option>`;
-  const save = () => S.save();
+  const save = () => { if (!viewer) S.save(); };
+  const fmtAt = iso => new Date(iso).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const clubUsed = id => state.comps.some(c => c.concs.some(k => R.participants(k).includes(id)));
 
   function findMatch(conc, id) {
@@ -51,7 +56,11 @@
     document.title = v.title;
     backBtn.hidden = !v.back;
     backBtn.dataset.href = v.back || '';
-    app.innerHTML = v.html;
+    document.body.classList.toggle('ro', !!viewer);
+    const bar = viewer ? `<div class="viewbar">👁 Consulta só de leitura · dados de ${esc(fmtAt(viewer.at))}
+      <button class="mini ro-keep" data-act="exitViewer">Sair</button></div>` : '';
+    app.innerHTML = bar + v.html;
+    if (viewer) app.querySelectorAll('input, select').forEach(el => { el.disabled = true; });
     open.forEach(k => { const d = app.querySelector(`details[data-key="${k}"]`); if (d) d.open = true; });
     window.scrollTo(0, keep ? y : 0);
   }
@@ -68,6 +77,7 @@
   }
 
   function dispatch(p) {
+    if (viewer && (!p.length || p[0] !== 'c' || p[2] === 'new' || p[2] === 'settings')) return viewComp(viewer.comp);
     if (!p.length) return viewHome();
     if (p[0] === 'clubs') return viewClubs();
     if (p[0] === 'backup') return viewBackup();
@@ -123,11 +133,13 @@
     });
     if (!comp.concs.length) h += '<p class="muted">Sem concentrações.</p>';
     h += '</div>';
-    if (comp.type === 'circuito' || !comp.concs.length) h += `<a class="btn primary block" href="#/c/${comp.id}/new">+ Nova concentração</a>`;
+    if (!viewer && (comp.type === 'circuito' || !comp.concs.length)) h += `<a class="btn primary block" href="#/c/${comp.id}/new">+ Nova concentração</a>`;
     if (comp.type === 'circuito') h += `<a class="btn block" href="#/c/${comp.id}/table">🏆 Tabela geral</a>`;
+    current = { comp };
+    if (viewer) return { title: comp.name, html: h };
+    if (comp.concs.length) h += `<button class="btn block" data-act="shareLink">🔗 Partilhar link de consulta</button>`;
     h += `<a class="btn block" href="#/c/${comp.id}/settings">⚙️ Regras e pontuação</a>
       <button class="btn danger block" data-act="delComp">Apagar competição</button>`;
-    current = { comp };
     return { title: comp.name, back: '#/', html: h };
   }
 
@@ -594,6 +606,18 @@
       if (!confirm(`Apagar ${clubName(d.id)}?`)) return;
       state.clubs = state.clubs.filter(c => c.id !== d.id); save(); render(true);
     },
+    async shareLink() {
+      const comp = current.comp;
+      try {
+        const data = await S.encodeLink(S.snapshot(comp, state.clubs));
+        share(`Resultados – ${comp.name}:\n${location.href.split('#')[0]}#/ver/${data}`);
+      } catch (e) { alert('Não foi possível criar o link: ' + e.message); }
+    },
+    exitViewer() {
+      sessionStorage.removeItem(VKEY);
+      viewer = null; state = S.load();
+      setHash('#/'); render();
+    },
     export() { S.exportFile(); },
     reset() {
       if (!confirm('Apagar TODOS os dados? Esta ação não pode ser desfeita.')) return;
@@ -711,6 +735,29 @@
   });
 
   backBtn.addEventListener('click', () => { if (backBtn.dataset.href) location.hash = backBtn.dataset.href; });
-  window.addEventListener('hashchange', () => render(false));
-  render(false);
+  // muda o # sem criar entrada no histórico nem disparar hashchange
+  const setHash = h => history.replaceState(null, '', location.href.split('#')[0] + h);
+
+  // abre um link de consulta (#/ver/<dados>) ou retoma o que já estava aberto neste separador
+  async function boot() {
+    if (isViewLink()) {
+      try {
+        const snap = await S.decodeLink(location.hash.slice('#/ver/'.length));
+        sessionStorage.setItem(VKEY, JSON.stringify(snap));
+        setHash('#/c/' + snap.comp.id);
+      } catch (e) {
+        alert(e.message);
+        setHash('#/');
+      }
+    }
+    const saved = sessionStorage.getItem(VKEY);
+    viewer = saved ? JSON.parse(saved) : null;
+    state = viewer ? { clubs: viewer.clubs, comps: [viewer.comp] } : S.load();
+  }
+
+  window.addEventListener('hashchange', () => {
+    if (isViewLink()) boot().then(() => render(false));
+    else render(false);
+  });
+  boot().then(() => render(false));
 })();
