@@ -7,6 +7,7 @@
   const titleEl = document.getElementById('title');
   const backBtn = document.getElementById('back');
 
+  const PUBLIC_URL = 'https://marcoaadelgado-dev.github.io/pxo/'; // endereço da app no GitHub Pages
   const VKEY = 'pxo-ver'; // sessionStorage: dados do link de consulta aberto
   const isViewLink = () => location.hash.startsWith('#/ver/');
   let viewer = null; // snapshot em modo consulta (só leitura)
@@ -610,7 +611,9 @@
       const comp = current.comp;
       try {
         const data = await S.encodeLink(S.snapshot(comp, state.clubs));
-        share(`Resultados – ${comp.name}:\n${location.href.split('#')[0]}#/ver/${data}`);
+        // aberta a partir da pasta no PC (file://), o link tem de apontar para o site publicado
+        const base = location.protocol === 'file:' ? PUBLIC_URL : location.href.split('#')[0];
+        share(`Resultados – ${comp.name}:\n${base}#/ver/${data}`);
       } catch (e) { alert('Não foi possível criar o link: ' + e.message); }
     },
     exitViewer() {

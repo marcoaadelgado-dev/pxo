@@ -1,5 +1,5 @@
 // Funciona offline: tenta a rede primeiro (para receber atualizações) e usa a cache sem rede.
-const CACHE = 'pxo-v3';
+const CACHE = 'pxo-v4';
 const FILES = ['./', 'index.html', 'styles.css', 'js/rules.js', 'js/store.js', 'js/ui.js', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
